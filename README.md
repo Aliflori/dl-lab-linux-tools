@@ -23,6 +23,41 @@ Use the regular login shell for shared networking. Members of `lab-net` can run 
 
 Run `sharif-net` from the shell whose source address you want to authenticate and verify that its displayed IP is the intended one. An authentication or disconnect action on the shared source IP can affect other users of that IP. The menu also includes account-wide disconnect. Optional saved portal passwords are plaintext in `~/.config/sharif-net/credentials.json`, protected by local file permissions. Leave credential saving off on shared systems unless lab policy allows it.
 
+## Running GUI Applications Inside the Dedicated Network
+
+Run `lab-shell` from an accessible graphical desktop session. After dropping elevated privileges, the deployed launcher automatically restores the session environment for compatible Wayland and X11 applications. Manual environment variable exports are unnecessary.
+
+**Launch Mister Download Manager**
+
+```bash
+misterdownloadmanager &
+```
+
+**Launch Chrome with a temporary profile**
+
+```bash
+google-chrome --user-data-dir="$(mktemp -d /tmp/chrome-dedicated-XXXXXX)" --no-first-run &
+```
+
+The independent profile prevents Chrome from reusing an existing browser process outside the dedicated network. Remove the temporary profile directory after that Chrome instance is fully closed.
+
+**Verify privilege restrictions**
+
+```bash
+grep -E '^(Uid|CapEff|CapBnd|NoNewPrivs):' /proc/$$/status
+```
+
+`Uid` should show your original Linux UID. `CapEff` and `CapBnd` should both be `0000000000000000`, and `NoNewPrivs` should be `1`.
+
+**Verify the network namespace**
+
+```bash
+ps -C chrome,misterdownloadmanager -o pid,user,netns,comm
+ps -p $$ -o pid,user,netns,comm
+```
+
+A matching `NETNS` value confirms that an application process shares the dedicated shell's network namespace. Applications that reuse existing processes may stay in their original namespace. Firefox installed through Snap has a known cgroup compatibility issue on the lab host. GUI support uses the existing desktop session and requires no additional packages, systemd services, proxies, tunnels, or SSH configuration changes.
+
 ## Dependencies and checks
 
 - **Accounts and quota:** Debian/Ubuntu `adduser`, shadow account tools, Bash, and Linux quota tools. Check the mount and quota state with `findmnt /home`, `sudo quotaon -p -u /home`, `sudo quota -u USERNAME -s`, and `id USERNAME`.
