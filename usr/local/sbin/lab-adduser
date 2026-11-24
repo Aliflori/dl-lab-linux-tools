@@ -1,0 +1,90 @@
+#!/bin/bash
+set -euo pipefail
+
+# Must run as root
+if (( EUID != 0 )); then
+    echo "ERROR: Run with sudo."
+    exit 1
+fi
+
+# Check arguments
+if (( $# != 1 )); then
+    echo "Usage: sudo lab-adduser USERNAME"
+    exit 1
+fi
+
+USER="$1"
+
+# Validate username
+if [[ ! "$USER" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+    echo "ERROR: Invalid username."
+    exit 1
+fi
+
+# Check if user already exists
+if getent passwd "$USER" >/dev/null; then
+    echo "ERROR: User already exists."
+    exit 1
+fi
+
+# Check that user quota is active on /home
+QUOTA_STATUS=$(quotaon -p -u /home 2>/dev/null || true)
+
+if ! grep -Eq '^user quota on /home \(.+\) is on$' <<< "$QUOTA_STATUS"; then
+    echo "ERROR: User quota is not active on /home."
+    exit 1
+fi
+
+# Ensure dedicated network group exists
+if ! getent group lab-net >/dev/null; then
+    echo "ERROR: lab-net group does not exist."
+    exit 1
+fi
+
+# Create Linux user and home directory
+adduser "$USER"
+
+# Set disk quota
+# Soft Limit: 80 GiB
+# Hard Limit: 100 GiB
+# Units: KiB
+
+if ! setquota -u "$USER" 83886080 104857600 0 0 /home; then
+    echo "ERROR: User created, but quota assignment failed!"
+    echo "Resolve this before giving access to the student."
+    exit 1
+fi
+
+
+# Force password change on first login
+passwd --expire "$USER"
+
+# Grant dedicated network access
+if ! usermod -aG lab-net "$USER"; then
+    echo "ERROR: User created, but network access assignment failed."
+    echo "Resolve this before giving access to the student."
+    exit 1
+fi
+
+if ! id -Gn "$USER" | tr ' ' '\n' | grep -Fxq lab-net; then
+    echo "ERROR: Could not verify lab-net membership."
+    exit 1
+fi
+
+# Display results
+echo ""
+echo "========================================"
+echo " LAB USER CREATED SUCCESSFULLY"
+echo "========================================"
+echo "Username:    $USER"
+echo "Home:        /home/$USER"
+echo "Soft Limit:  80 GiB"
+echo "Hard Limit:  100 GiB"
+echo "Grace:       7 days (system policy)"
+echo "Password:    Change required at first login"
+echo "Network:     lab-shell access enabled"
+echo "========================================"
+echo ""
+
+# Show user's disk quota
+quota -u "$USER" -s || true
